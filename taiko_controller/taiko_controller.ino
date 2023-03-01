@@ -16,9 +16,13 @@
 
 #ifdef ENABLE_NS_JOYSTICK
 #include "Joystick.h"
-const int led_pin[4] = {8, 9, 10, 11};
+const int led_pin[4] = {8, 8, 8, 8};
 const int sensor_button[4] = {SWITCH_BTN_ZL, SWITCH_BTN_LCLICK, SWITCH_BTN_RCLICK, SWITCH_BTN_ZR};
 #endif
+
+int btn3state = 0;
+int btn3cd = 0;
+#define btn3pin 2
 
 #ifdef HAS_BUTTONS
 int button_state[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -52,7 +56,7 @@ const long cd_length = 10000;
 const float k_threshold = 1.5;
 const float k_decay = 0.97;
 
-const int pin[4] = {A0, A3, A1, A2};
+const int pin[4] = {A1, A0, A2, A3};
 const int key[4] = {'d', 'f', 'j', 'k'};
 const float sens[4] = {1.0, 1.0, 1.0, 1.0};
 
@@ -97,9 +101,13 @@ void setup() {
   analogReference(DEFAULT);
   analogSwitchPin(pin[0]);
   pinMode(LED_BUILTIN, OUTPUT);
+
+  pinMode(btn3pin, INPUT_PULLUP);
+
+
   digitalWrite(LED_BUILTIN, LOW);
 #ifdef ENABLE_NS_JOYSTICK
-  for (int i = 0; i < 8; ++i) pinMode(i, INPUT_PULLUP);
+  //for (int i = 0; i < 8; ++i) pinMode(i, INPUT_PULLUP);
   for (int i = 0; i < 4; ++i) {  digitalWrite(led_pin[i], HIGH); pinMode(led_pin[i], OUTPUT); }
 #endif
 #ifdef ENABLE_KEYBOARD
@@ -259,6 +267,17 @@ void loop() {
   static int cc = 0;
   ct += dt;
   cc += 1;
+
+  int state = digitalRead(btn3pin) == LOW;
+  if(btn3cd != 0) {
+    btn3cd -= ct;
+    if(btn3cd < 0) btn3cd = 0;
+  }
+  if (state != btn3state && btn3cd == 0) {
+    btn3state = state;
+    btn3cd = 15000;
+    Joystick.Button |= btn3state ? SWITCH_BTN_L | SWITCH_BTN_R : SWITCH_BTN_NONE;
+  }
 
 #ifdef HAS_BUTTONS
   // 4x4 button scan, one row per cycle
