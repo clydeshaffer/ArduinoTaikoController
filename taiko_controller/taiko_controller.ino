@@ -7,6 +7,7 @@
 
 //#define ENABLE_KEYBOARD
 #define ENABLE_NS_JOYSTICK
+#define ENABLE_SNESPAD
 
 //#define HAS_BUTTONS
 
@@ -20,9 +21,32 @@ const int led_pin[4] = {8, 8, 8, 8};
 const int sensor_button[4] = {SWITCH_BTN_ZL, SWITCH_BTN_LCLICK, SWITCH_BTN_RCLICK, SWITCH_BTN_ZR};
 #endif
 
-int btn3state = 0;
-int btn3cd = 0;
-#define btn3pin 2
+#ifdef ENABLE_SNESPAD
+int btn_extra_states[3] = {0, 0, 0};
+int btn_extra_cds[3] = {0, 0, 0};
+int btn_extra_pins[3] = {4, 3, 2};
+
+int SNES_DATA_CLOCK    = 6;
+int SNES_DATA_LATCH    = 7;
+int SNES_DATA_SERIAL  = 12;
+
+int SNES_buttons[12];
+
+const int SNES_mapping[12] = {
+SWITCH_BTN_B, SWITCH_BTN_Y, SWITCH_BTN_SELECT, SWITCH_BTN_START,
+SWITCH_HAT_U, SWITCH_HAT_D, SWITCH_HAT_L, SWITCH_HAT_R,
+SWITCH_BTN_A, SWITCH_BTN_X, SWITCH_BTN_L, SWITCH_BTN_R
+};
+
+const bool SNES_hat[12] = {
+  false, false, false, false,
+  true, true, true, true,
+  false, false, false, false
+};
+
+#define NUM_SNES_BUTTONS 12
+
+#endif
 
 #ifdef HAS_BUTTONS
 int button_state[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -80,6 +104,25 @@ typedef unsigned long time_t;
 time_t t0 = 0;
 time_t dt = 0, sdt = 0;
 
+#ifdef ENABLE_SNESPAD
+void read_snespad() {
+  digitalWrite(SNES_DATA_LATCH, HIGH);
+  delayMicroseconds(12);
+  digitalWrite(SNES_DATA_LATCH, LOW);
+  delayMicroseconds(6);
+  
+  for(int i = 0; i < 16; i++){
+      digitalWrite(SNES_DATA_CLOCK, LOW);
+      delayMicroseconds(6);
+      if(i <= 11){
+          SNES_buttons[i] = digitalRead(SNES_DATA_SERIAL);
+      }
+      digitalWrite(SNES_DATA_CLOCK, HIGH);
+      delayMicroseconds(6);
+  }
+}
+#endif
+
 void sample() {
   int prev[4] = {raw[0], raw[1], raw[2], raw[3]};
   raw[0] = analogRead(pin[0]);
@@ -102,8 +145,23 @@ void setup() {
   analogSwitchPin(pin[0]);
   pinMode(LED_BUILTIN, OUTPUT);
 
-  pinMode(btn3pin, INPUT_PULLUP);
+#ifdef ENABLE_SNESPAD
+  pinMode(btn_extra_pins[0], INPUT_PULLUP);
+  pinMode(btn_extra_pins[1], INPUT_PULLUP);
+  pinMode(btn_extra_pins[2], INPUT_PULLUP);
+  // Set DATA_CLOCK normally HIGH
+  pinMode(SNES_DATA_CLOCK, OUTPUT);
+  digitalWrite(SNES_DATA_CLOCK, HIGH);
+  
+  // Set DATA_LATCH normally LOW
+  pinMode(SNES_DATA_LATCH, OUTPUT);
+  digitalWrite(SNES_DATA_LATCH, LOW);
 
+  // Set DATA_SERIAL normally HIGH
+  pinMode(SNES_DATA_SERIAL, OUTPUT);
+  digitalWrite(SNES_DATA_SERIAL, HIGH);
+  pinMode(SNES_DATA_SERIAL, INPUT);  
+#endif
 
   digitalWrite(LED_BUILTIN, LOW);
 #ifdef ENABLE_NS_JOYSTICK
@@ -268,16 +326,20 @@ void loop() {
   ct += dt;
   cc += 1;
 
-  int state = digitalRead(btn3pin) == LOW;
-  if(btn3cd != 0) {
-    btn3cd -= ct;
-    if(btn3cd < 0) btn3cd = 0;
+#ifdef ENABLE_SNESPAD
+  for(int i = 0; i < 3; ++i) {
+    int state = digitalRead(btn_extra_pins[i]) == LOW;
+    if(btn_extra_cds[i] != 0) {
+      btn_extra_cds[i] -= ct;
+      if(btn_extra_cds[i] < 0) btn_extra_cds[i] = 0;
+    }
+    if (state != btn_extra_states[i] && btn_extra_cds[i] == 0) {
+      btn_extra_states[i] = state;
+      btn_extra_cds[i] = 15000;
+      Joystick.Button |= btn_extra_states[i] ? SWITCH_BTN_L | SWITCH_BTN_R : SWITCH_BTN_NONE;
+    }
   }
-  if (state != btn3state && btn3cd == 0) {
-    btn3state = state;
-    btn3cd = 15000;
-    Joystick.Button |= btn3state ? SWITCH_BTN_L | SWITCH_BTN_R : SWITCH_BTN_NONE;
-  }
+#endif
 
 #ifdef HAS_BUTTONS
   // 4x4 button scan, one row per cycle
@@ -329,8 +391,31 @@ void loop() {
     }
     Joystick.HAT = hat_mapping[state]; 
 #endif
+
+#ifdef ENABLE_SNESPAD
+  for(int i = 0; i < NUM_SNES_BUTTONS; ++i) {
+    if(SNES_hat[i]) {
+      Joystick.Button |= (SNES_buttons[i] ? SNES_mapping[i] : SWITCH_BTN_NONE);
+    } else {
+      if(SNES_buttons[i]) {
+        Joystick.HAT = SNES_mapping[i];
+      }
+    }
+  }
+  if(btn_extra_states[0]) {
+    Joystick.Button |= SWITCH_BTN_HOME;
+  }
+  if(btn_extra_states[1]) {
+    Joystick.Button |= SWITCH_BTN_CAPTURE;
+  }
+  if(btn_extra_states[2]) {
+    Joystick.Button |= SWITCH_BTN_L | SWITCH_BTN_R;
+  }
+#endif
+
     Joystick.sendState();
     Joystick.Button = SWITCH_BTN_NONE;
+    Joystick.HAT = SWITCH_HAT_CENTER;
 #ifdef DEBUG_TIME
     if (cc > 0)
       Serial.println((float)ct/cc);

@@ -1,7 +1,7 @@
 #ifndef JOYSTICK_h
 #define JOYSTICK_h
 
-#include <HID.h>
+#include "libraries/HID2/src/HID2.h"
 
 /*** 
  *  All enum, class and descriptor definitions are originally written by progmem in library Switch-Fightstick(https://github.com/progmem/Switch-Fightstick).
